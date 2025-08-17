@@ -28,8 +28,7 @@
     "mongoose": "^7.0.3",
     "nodemon": "^2.0.22",
     "pdfkit": "^0.16.0",
-    "stream-buffers": "^3.0.3",
-    "stripe": "^14.23.0"
+    "stream-buffers": "^3.0.3"
   },
   "engines": {
     "node": ">=14 <15"

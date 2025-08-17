@@ -6,6 +6,7 @@ const fs = require("fs");
 const PDFDocument = require("pdfkit");
 const streamBuffers = require("stream-buffers");
 const path = require("path");
+const signaturePath = __dirname + "/signature.png";
 
 const getTests = async (req, res) => {
   try {
@@ -111,19 +112,19 @@ const drawFooter = (doc) => {
     .fill();
   doc.restore();
 
-  doc
-    .font("Helvetica")
-    .fontSize(9)
-    .fillColor("black")
-    .text(
-      "This report is not valid for medico-legal purposes.",
-      0,
-      pageHeight - 45,
-      {
-        align: "center",
-        width: doc.page.width,
-      }
-    );
+  // doc
+  //   .font("Helvetica")
+  //   .fontSize(9)
+  //   .fillColor("black")
+  //   .text(
+  //     "This report is not valid for medico-legal purposes.",
+  //     0,
+  //     pageHeight - 45,
+  //     {
+  //       align: "center",
+  //       width: doc.page.width,
+  //     }
+  //   );
 
   doc
     .font("Helvetica-Bold")
@@ -138,18 +139,31 @@ const drawFooter = (doc) => {
         align: "center",
       }
     );
-
+  doc.image(signaturePath, doc.page.width - 150, pageHeight - 130, {
+    width: 76, // adjust size if needed
+    height: 33, // optional
+  });
   doc
     .font("Helvetica-Bold")
     .fontSize(10)
     .fillColor("black")
-    .text("Authorized Signatory", doc.page.width - 180, pageHeight - 70, {
+    .text("DR NIRAJ K N", doc.page.width - 230, pageHeight - 90, {
+      width: 150,
+      align: "right",
+    });
+
+  // Doctor's Qualifications (below name)
+  doc
+    .font("Helvetica")
+    .fontSize(9)
+    .fillColor("black")
+    .text("  MBBS, DCP, DNB", doc.page.width - 226, pageHeight - 75, {
       width: 150,
       align: "right",
     });
 };
 
-const generatereport = async (req, res) => {
+const generatereportwithheader = async (req, res) => {
   try {
     const {
       patientName,
@@ -159,6 +173,7 @@ const generatereport = async (req, res) => {
       testResults,
       doctorName,
       sampleCollected,
+      remarks,
     } = req.body;
 
     const reportNumber = getUniqueReportNumber();
@@ -346,10 +361,12 @@ const generatereport = async (req, res) => {
     console.log(y, doc.page.height);
     testResults.forEach((test) => {
       const { testName, value, min, max, unit } = test;
+      const displayUnit = unit ? unit : "N/A";
+      const displayRange = min || max ? `${min} - ${max}` : "N/A";
       const outOfRange =
         parseFloat(value) < parseFloat(min) ||
         parseFloat(value) > parseFloat(max);
-      const rowValues = [testName, value, unit, `${min} - ${max}`];
+      const rowValues = [testName, value, displayUnit, displayRange];
 
       let x = startX;
       rowValues.forEach((val, i) => {
@@ -366,7 +383,274 @@ const generatereport = async (req, res) => {
       y += 18;
       console.log(y);
     });
+    if (remarks && remarks.trim() !== "") {
+      y += 10;
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(11)
+        .text("Remarks:", startX, y, { align: "left" });
+      y += 14;
+      doc
+        .font("Times-Italic")
+        .fontSize(10)
+        .text(remarks, startX, y, {
+          width: doc.page.width - 2 * margin,
+          align: "left",
+        });
+    }
+
     drawFooter(doc, 1);
+
+    doc.end();
+    bufferStream.on("finish", () => {
+      const pdfData = bufferStream.getContents();
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename=report_${reportNumber}.pdf`
+      );
+      res.send(pdfData);
+    });
+  } catch (error) {
+    console.error("Error generating report:", error);
+    res.status(500).send({ result: "Internal Server Error" });
+  }
+};
+const generatereportwithoutheader = async (req, res) => {
+  try {
+    const {
+      patientName,
+      age,
+      gender,
+      testAsked,
+      testResults,
+      doctorName,
+      sampleCollected,
+      remarks,
+    } = req.body;
+
+    const reportNumber = getUniqueReportNumber();
+
+    // Get today's date in `DD MMM YYYY` format
+    const reportDate = new Date().toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+
+    const bufferStream = new streamBuffers.WritableStreamBuffer();
+    const doc = new PDFDocument({ size: "A4", margin: 10 });
+    // console.log(doc.page.height);
+    doc.pipe(bufferStream);
+    const logoPath = path.join(__dirname, "logo.png");
+
+    // Add watermark image with transparency (opacity) behind all content
+    // Save current state before transformation
+    doc.save();
+
+    // Move to center of the page
+    doc.translate(doc.page.width / 2.5, (3.2 * doc.page.height) / 4);
+
+    // Rotate 45 degrees
+    doc.rotate(-45);
+
+    // Set opacity
+    doc.opacity(0.07); // Lower value for lighter watermark
+
+    // Draw image centered after transformation
+    doc.image(logoPath, -150, -150, {
+      width: 600,
+    });
+
+    // Restore to original state (no rotation/opacity leak)
+    doc.restore();
+    const drawWrappedText = (
+      doc,
+      text,
+      x,
+      y,
+      width,
+      fontSize = 11,
+      font = "Helvetica"
+    ) => {
+      doc.font(font).fontSize(fontSize);
+      const options = { width: width - 10 }; // Padding: 5 left/right
+      const lines = doc.heightOfString(text, options) / fontSize;
+      doc.text(text, x + 5, y + 5, options); // Small top/left padding
+      return lines;
+    };
+
+    let y = 90;
+    const pageWidth = doc.page.width;
+    const margin = 30;
+    const startX = margin;
+    const rectWidth = pageWidth - 2 * margin;
+    console.log(pageWidth);
+    const colWidths = [85, 175, 85, 180];
+
+    const patientRows = [
+      ["Name:", patientName, "Referred By:", `Dr. ${doctorName}`],
+      ["Report No:", reportNumber, "Sex / Age:", `${gender} / ${age}`],
+      ["Collected On:", sampleCollected, "Report Date:", reportDate],
+      [
+        "Collected At:",
+        "Diagnocare, Nawab Chowk, Near Gandhi Stadium towards GST Office",
+        "Test Asked For:",
+        testAsked,
+      ],
+    ];
+
+    // Step 1: Dynamically calculate row heights
+    doc.font("Helvetica").fontSize(11);
+    const rowHeights = patientRows.map((row) => {
+      let maxLines = 1;
+      for (let i = 0; i < row.length; i++) {
+        const text = row[i];
+        const width = colWidths[i];
+        const height = doc.heightOfString(text, { width: width - 10 }) / 9;
+        maxLines = Math.max(maxLines, Math.ceil(height));
+      }
+      return maxLines * 12; // 12 = line height
+    });
+
+    const patientSectionHeight = rowHeights.reduce((sum, h) => sum + h, 0);
+    doc.save();
+    doc
+      .lineWidth(1)
+      .roundedRect(startX, y, rectWidth, patientSectionHeight - 10, 10)
+      .fillAndStroke("#FFFACD", "black");
+    doc.restore();
+
+    // Step 2: Draw wrapped cells using calculated heights
+    let currentY = y + 7;
+    patientRows.forEach((row, rowIndex) => {
+      let x = startX + 10;
+      const rowHeight = rowHeights[rowIndex];
+      row.forEach((cell, colIndex) => {
+        const width = colWidths[colIndex];
+        drawWrappedText(
+          doc,
+          cell,
+          x,
+          currentY,
+          width,
+          10,
+          colIndex % 2 === 0 ? "Helvetica-Bold" : "Helvetica"
+        );
+        x += width;
+      });
+      currentY += rowHeight;
+    });
+
+    y = currentY + 10;
+
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(14)
+      .text("TEST REPORT", startX, y, { align: "center", width: rectWidth });
+    y += 20;
+
+    const testColWidths = [160, 115, 130, 130];
+    doc
+      .fillColor("#fffac0")
+      .rect(
+        startX,
+        y,
+        testColWidths.reduce((a, b) => a + b),
+        20
+      )
+      .fill();
+    console.log(testColWidths.reduce((a, b) => a + b));
+    doc
+      .strokeColor("black")
+      .moveTo(startX, y)
+      .lineTo(startX + testColWidths.reduce((a, b) => a + b), y)
+      .stroke();
+    doc
+      .moveTo(startX, y + 20)
+      .lineTo(startX + testColWidths.reduce((a, b) => a + b), y + 20)
+      .stroke();
+
+    const testHeaders = ["Investigation", "Result", "Unit", "Reference Range"];
+    let x = startX;
+    testHeaders.forEach((header, i) => {
+      doc
+        .fillColor("black")
+        .font("Helvetica-Bold")
+        .fontSize(10)
+        .text(header, x + 5, y + 5, {
+          width: testColWidths[i] - 10,
+          align: i === 0 ? "left" : "center",
+        });
+      x += testColWidths[i];
+    });
+
+    y += 20;
+    console.log(y, doc.page.height);
+    testResults.forEach((test) => {
+      const { testName, value, min, max, unit } = test;
+      const displayUnit = unit ? unit : "N/A";
+      const displayRange = min || max ? `${min} - ${max}` : "N/A";
+      const outOfRange =
+        parseFloat(value) < parseFloat(min) ||
+        parseFloat(value) > parseFloat(max);
+      const rowValues = [testName, value, displayUnit, displayRange];
+
+      let x = startX;
+      rowValues.forEach((val, i) => {
+        doc
+          .font(outOfRange ? "Helvetica-Bold" : "Helvetica")
+          .fontSize(10)
+          .fillColor("black")
+          .text(val, x + 5, y + 5, {
+            width: testColWidths[i] - 10,
+            align: i === 0 ? "left" : "center",
+          });
+        x += testColWidths[i];
+      });
+      y += 18;
+      console.log(y);
+    });
+    if (remarks && remarks.trim() !== "") {
+      y += 10;
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(11)
+        .text("Remarks:", startX, y, { align: "left" });
+      y += 14;
+      doc
+        .font("Times-Italic")
+        .fontSize(10)
+        .text(remarks, startX, y, {
+          width: doc.page.width - 2 * margin,
+          align: "left",
+        });
+    }
+
+    // drawFooter(doc, 1);
+    const pageHeight = doc.page.height;
+    doc.image(signaturePath, doc.page.width - 150, pageHeight - 130, {
+      width: 76, // adjust size if needed
+      height: 33, // optional
+    });
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(10)
+      .fillColor("black")
+      .text("DR NIRAJ K N", doc.page.width - 230, pageHeight - 90, {
+        width: 150,
+        align: "right",
+      });
+
+    // Doctor's Qualifications (below name)
+    doc
+      .font("Helvetica")
+      .fontSize(9)
+      .fillColor("black")
+      .text("  MBBS, DCP, DNB", doc.page.width - 226, pageHeight - 75, {
+        width: 150,
+        align: "right",
+      });
 
     doc.end();
     bufferStream.on("finish", () => {
@@ -391,5 +675,6 @@ module.exports = {
   deleteTest,
   updateTest,
   searchTest,
-  generatereport,
+  generatereportwithheader,
+  generatereportwithoutheader,
 };

@@ -8,7 +8,8 @@ const {
   deleteTest,
   updateTest,
   searchTest,
-  generatereport,
+  generatereportwithheader,
+  generatereportwithoutheader,
 } = require("../controllers/test");
 
 // Route to verify user authentication
@@ -25,7 +26,12 @@ router.delete("/deletetest/:id", verifyToken, deleteTest);
 
 // Route to update a test by ID
 router.put("/updatetest/:id", verifyToken, updateTest);
-router.post("/generatereport", verifyToken, generatereport);
+router.post("/generatereportwithheader", verifyToken, generatereportwithheader);
+router.post(
+  "/generatereportwithoutheader",
+  verifyToken,
+  generatereportwithoutheader
+);
 
 // Route to search for tests based on a query
 router.get("/search/:key", verifyToken, searchTest);
